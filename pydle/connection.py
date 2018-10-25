@@ -5,12 +5,12 @@ import ssl
 
 from . import async
 
-__all__ = ['Connection']
+__all__ = ["Connection"]
 
 DEFAULT_CA_PATHS = {
-    'linux': '/etc/ssl/certs',
-    'linux2': '/etc/ssl/certs',
-    'freebsd': '/etc/ssl/certs'
+    "linux": "/etc/ssl/certs",
+    "linux2": "/etc/ssl/certs",
+    "freebsd": "/etc/ssl/certs",
 }
 
 MESSAGE_THROTTLE_TRESHOLD = 3
@@ -19,9 +19,27 @@ MESSAGE_THROTTLE_DELAY = 2
 
 class Connection:
     """ A TCP connection over the IRC protocol. """
+
     CONNECT_TIMEOUT = 10
 
-    def __init__(self, hostname, port, tls=False, tls_verify=True, tls_certificate_file=None, tls_certificate_keyfile=None, tls_certificate_password=None, ping_timeout=240, source_address=None, eventloop=None):
+    def __init__(
+        self,
+        hostname,
+        port,
+        tls=False,
+        tls_verify=True,
+        tls_certificate_file=None,
+        tls_certificate_keyfile=None,
+        tls_certificate_password=None,
+        ping_timeout=240,
+        source_address=None,
+        eventloop=None,
+        proxy_host=None,
+        proxy_port=None,
+        proxy_user=None,
+        proxy_pass=None,
+        proxy_version=5,
+    ):
         self.hostname = hostname
         self.port = port
         self.source_address = source_address
@@ -34,6 +52,12 @@ class Connection:
         self.tls_certificate_keyfile = tls_certificate_keyfile
         self.tls_certificate_password = tls_certificate_password
 
+        self.proxy_host = proxy_host
+        self.proxy_port = proxy_port
+        self.proxy_user = proxy_user
+        self.proxy_pass = proxy_pass
+        self.proxy_version = proxy_version
+
         self.reader = None
         self.writer = None
         self.eventloop = eventloop or async.EventLoop()
@@ -45,7 +69,16 @@ class Connection:
 
         if self.tls:
             self.tls_context = self.create_tls_context()
-        (self.reader, self.writer) = yield from self.eventloop.connect((self.hostname, self.port), local_addr=self.source_address, tls=self.tls_context)
+        (self.reader, self.writer) = yield from self.eventloop.connect(
+            (self.hostname, self.port),
+            local_addr=self.source_address,
+            tls=self.tls_context,
+            proxy_host=self.proxy_host,
+            proxy_port=self.proxy_port,
+            proxy_user=self.proxy_user,
+            proxy_pass=self.proxy_pass,
+            proxy_version=self.proxy_version,
+        )
 
     def create_tls_context(self):
         """ Transform our regular socket into a TLS socket. """
@@ -54,15 +87,19 @@ class Connection:
 
         # Load client/server certificate.
         if self.tls_certificate_file:
-            tls_context.load_cert_chain(self.tls_certificate_file, self.tls_certificate_keyfile, password=self.tls_certificate_password)
+            tls_context.load_cert_chain(
+                self.tls_certificate_file,
+                self.tls_certificate_keyfile,
+                password=self.tls_certificate_password,
+            )
 
         # Set some relevant options:
         # - No server should use SSLv2 or SSLv3 any more, they are outdated and full of security holes. (RFC6176, RFC7568)
         # - Disable compression in order to counter the CRIME attack. (https://en.wikipedia.org/wiki/CRIME_%28security_exploit%29)
         # - Disable session resumption to maintain perfect forward secrecy. (https://timtaubert.de/blog/2014/11/the-sad-state-of-server-side-tls-session-resumption-implementations/)
-        for opt in ['NO_SSLv2', 'NO_SSLv3', 'NO_COMPRESSION', 'NO_TICKET']:
-            if hasattr(ssl, 'OP_' + opt):
-                tls_context.options |= getattr(ssl, 'OP_' + opt)
+        for opt in ["NO_SSLv2", "NO_SSLv3", "NO_COMPRESSION", "NO_TICKET"]:
+            if hasattr(ssl, "OP_" + opt):
+                tls_context.options |= getattr(ssl, "OP_" + opt)
 
         # Set TLS verification options.
         if self.tls_verify:
@@ -71,7 +108,9 @@ class Connection:
 
             # Load certificate verification paths.
             tls_context.set_default_verify_paths()
-            if sys.platform in DEFAULT_CA_PATHS and path.isdir(DEFAULT_CA_PATHS[sys.platform]):
+            if sys.platform in DEFAULT_CA_PATHS and path.isdir(
+                DEFAULT_CA_PATHS[sys.platform]
+            ):
                 tls_context.load_verify_locations(capath=DEFAULT_CA_PATHS[sys.platform])
 
             # If we want to verify the TLS connection, we first need a certicate.
@@ -112,11 +151,9 @@ class Connection:
         """ Whether this connection is... connected to something. """
         return self.reader is not None and self.writer is not None
 
-
     def stop(self):
         """ Stop event loop. """
         self.eventloop.schedule(lambda: self.eventloop.stop())
-
 
     @async.coroutine
     def send(self, data):
